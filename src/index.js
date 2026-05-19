@@ -14,8 +14,7 @@
  *                           e.g. "noreply@spam.com"
  */
 
-import * as PostalMimeModule from "postal-mime";
-const PostalMime = PostalMimeModule.default ?? PostalMimeModule.PostalMime ?? PostalMimeModule;
+import PostalMime from "postal-mime";
 
 export default {
   async email(message, env, ctx) {
@@ -28,9 +27,8 @@ export default {
     }
 
     // ── 2. Parse the raw email ─────────────────────────────────────────────
-    const rawEmail = await streamToArrayBuffer(message.raw);
-    const parser = new PostalMime();
-    const parsed = await parser.parse(rawEmail);
+    const rawBuffer = await streamToArrayBuffer(message.raw);
+    const parsed = await PostalMime.parse(rawBuffer);
 
     const subject = parsed.subject ?? "No Subject";
     const senderName = extractSenderName(parsed.from?.name, sender);
