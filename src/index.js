@@ -14,7 +14,8 @@
  *                           e.g. "noreply@spam.com"
  */
 
-import { PostalMime } from "postal-mime";
+import * as PostalMimeModule from "postal-mime";
+const PostalMime = PostalMimeModule.default ?? PostalMimeModule.PostalMime ?? PostalMimeModule;
 
 export default {
   async email(message, env, ctx) {

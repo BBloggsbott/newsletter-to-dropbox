@@ -2,10 +2,11 @@
   "name": "newsletter-to-dropbox",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "dependencies": {
-    "postal-mime": "^1.0.72"
+    "postal-mime": "1.0.72"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "3.101.0"
   }
 }
