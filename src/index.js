@@ -240,21 +240,56 @@ function textToHtml(text) {
 
 /**
  * Sanitise HTML for embedding in XHTML:
- *  - Remove scripts and styles (Kobo ignores them anyway)
- *  - Self-close void elements
- *  - Escape bare ampersands
- *  - Strip any <?xml ...?> processing instructions inside the body
+ *  1. If it's a full HTML document, extract just the <body> contents
+ *  2. Strip scripts, styles, conditional comments, tracking pixels
+ *  3. Unwrap purely layout <table> structures, keeping cell text
+ *  4. Self-close void elements
+ *  5. Escape bare ampersands
  */
 function sanitiseForXhtml(html) {
-  return html
+  // Step 1: extract body contents if this is a full HTML document
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  let body = bodyMatch ? bodyMatch[1] : html;
+
+  // Step 2: strip elements Kobo can't use or that break XHTML
+  body = body
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, "")  // MSO conditional comments
+    .replace(/<!--[\s\S]*?-->/g, "")                      // all other HTML comments
     .replace(/<\?xml[^?]*\?>/gi, "")
-    .replace(
-      /<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)([^>]*?)(?<!\/)>/gi,
-      "<$1$2/>"
-    )
-    .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/g, "&amp;");
+    .replace(/<!DOCTYPE[^>]*>/gi, "");
+
+  // Step 3: strip tracking pixels (1x1 images)
+  body = body.replace(/<img[^>]*width=["']?1["']?[^>]*height=["']?1["']?[^>]*\/?>/gi, "");
+  body = body.replace(/<img[^>]*height=["']?1["']?[^>]*width=["']?1["']?[^>]*\/?>/gi, "");
+
+  // Step 4: unwrap table layout — replace table/tr/td/tbody with div equivalents
+  // keeping the content but losing the email-client-specific table structure
+  body = body
+    .replace(/<table[^>]*>/gi, '<div class="table">')
+    .replace(/<\/table>/gi, "</div>")
+    .replace(/<tbody[^>]*>/gi, "")
+    .replace(/<\/tbody>/gi, "")
+    .replace(/<thead[^>]*>/gi, "")
+    .replace(/<\/thead>/gi, "")
+    .replace(/<tr[^>]*>/gi, '<div class="tr">')
+    .replace(/<\/tr>/gi, "</div>")
+    .replace(/<td[^>]*>/gi, '<div class="td">')
+    .replace(/<\/td>/gi, "</div>")
+    .replace(/<th[^>]*>/gi, '<div class="td">')
+    .replace(/<\/th>/gi, "</div>");
+
+  // Step 5: self-close void elements for XHTML validity
+  body = body.replace(
+    /<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)([^>]*?)(?<!\/)>/gi,
+    "<$1$2/>"
+  );
+
+  // Step 6: escape bare ampersands
+  body = body.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/g, "&amp;");
+
+  return body;
 }
 
 function escapeXml(str) {
