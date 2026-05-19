@@ -1,0 +1,16 @@
+name = "newsletter-to-dropbox"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+DROPBOX_FOLDER = "/Apps/Rakuten Kobo"
+
+# Comma-separated sender emails to accept. Omit to accept all.
+# ALLOWED_SENDERS = "morningbrew@email.morningbrew.com,digest@example.com"
+
+# Comma-separated sender emails to always reject.
+# BLOCKED_SENDERS = "noreply@spam.com"
+
+# Secrets — never put these here. Set them via:
+#   wrangler secret put DROPBOX_ACCESS_TOKEN
+# Or in Cloudflare dashboard → Worker → Settings → Variables & Secrets
