@@ -1,0 +1,4 @@
+node_modules/
+.dev.vars
+dist/
+# Note: bun.lock / bun.lockb should be committed so Cloudflare can cache deps
