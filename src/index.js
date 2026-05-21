@@ -3,7 +3,9 @@
  *
  * ENV VARS (set in Cloudflare dashboard → Workers → Settings → Variables):
  *
- *   DROPBOX_ACCESS_TOKEN  — long-lived Dropbox API token (set as encrypted secret)
+ *   DROPBOX_REFRESH_TOKEN — Dropbox OAuth refresh token  (encrypted secret)
+ *   DROPBOX_APP_KEY        — Dropbox app key               (encrypted secret)
+ *   DROPBOX_APP_SECRET     — Dropbox app secret            (encrypted secret)
  *   DROPBOX_FOLDER        — Dropbox path synced to Kobo, e.g. /KoboReader
  *
  *   ALLOWED_SENDERS       — optional comma-separated list of allowed sender emails.
@@ -45,12 +47,14 @@ export default {
     const folder = (env.DROPBOX_FOLDER ?? "/KoboReader").replace(/\/$/, "");
     const dropboxPath = `${folder}/${filename}`;
 
+    const accessToken = await getDropboxAccessToken(env);
+
     const response = await fetch(
       "https://content.dropboxapi.com/2/files/upload",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.DROPBOX_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/octet-stream",
           "Dropbox-API-Arg": JSON.stringify({
             path: dropboxPath,
@@ -71,6 +75,36 @@ export default {
     console.log(`✓ Uploaded "${filename}" to Dropbox at ${dropboxPath}`);
   },
 };
+
+// ── Dropbox OAuth ─────────────────────────────────────────────────────────────
+
+async function getDropboxAccessToken(env) {
+  if (!env.DROPBOX_REFRESH_TOKEN || !env.DROPBOX_APP_KEY || !env.DROPBOX_APP_SECRET) {
+    throw new Error(
+      "Missing Dropbox OAuth secrets. Set DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY, " +
+      "and DROPBOX_APP_SECRET in Cloudflare Worker secrets."
+    );
+  }
+
+  const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type:    "refresh_token",
+      refresh_token: env.DROPBOX_REFRESH_TOKEN,
+      client_id:     env.DROPBOX_APP_KEY,
+      client_secret: env.DROPBOX_APP_SECRET,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to refresh Dropbox token (HTTP ${res.status}): ${err}`);
+  }
+
+  const { access_token } = await res.json();
+  return access_token;
+}
 
 // ── Sender filtering ─────────────────────────────────────────────────────────
 
