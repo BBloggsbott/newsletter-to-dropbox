@@ -1,4 +1,5 @@
 node_modules/
 .dev.vars
 dist/
+Rakuten Kobo/
 # Note: bun.lock / bun.lockb should be committed so Cloudflare can cache deps

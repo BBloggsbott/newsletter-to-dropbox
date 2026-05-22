@@ -155,9 +155,57 @@ function buildFilename(senderName, subject, date) {
   return `${slugify(senderName)}_${slugify(subject)}_${date}.epub`;
 }
 
+
+// ── Image inlining ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all remote images in the HTML and rewrite src to local EPUB paths.
+ * Returns the rewritten HTML and a map of { filename: { bytes, mime } }.
+ */
+async function inlineImages(html) {
+  const images = {};
+  const urlToFilename = {};
+
+  // Collect unique remote image URLs
+  const srcRe = /src=["']?(https?:\/\/[^"'\s>]+)["']?/gi;
+  const urls = new Set();
+  let m;
+  while ((m = srcRe.exec(html)) !== null) urls.add(m[1]);
+
+  // Fetch concurrently, cap at 20
+  await Promise.all([...urls].slice(0, 20).map(async (url) => {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (!res.ok) return;
+
+      const mime = (res.headers.get("content-type") ?? "image/jpeg").split(";")[0].trim();
+      if (!mime.startsWith("image/")) return;
+
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length < 500) return; // skip tracking pixels
+
+      const ext = mime.split("/")[1].replace("jpeg", "jpg").replace("svg+xml", "svg") || "jpg";
+      const fname = `img_${Object.keys(images).length}.${ext}`;
+      images[fname] = { bytes, mime };
+      urlToFilename[url] = fname;
+    } catch {
+      // silently skip images that fail
+    }
+  }));
+
+  // Rewrite src attributes to local paths
+  const inlinedHtml = html.replace(srcRe, (match, url) => {
+    const fname = urlToFilename[url];
+    return fname ? `src="images/${fname}"` : match;
+  });
+
+  console.log(`[newsletter-to-kobo] Inlined ${Object.keys(images).length}/${urls.size} images`);
+  return { html: inlinedHtml, images };
+}
+
 // ── EPUB builder ─────────────────────────────────────────────────────────────
 
-function buildEpub(title, author, date, htmlBody) {
+function buildEpub(title, author, date, htmlBody, images = {}) {
   const uuid = crypto.randomUUID();
   const safeBody = sanitiseForXhtml(htmlBody);
   const safeTitle = escapeXml(title);
@@ -242,6 +290,13 @@ blockquote {
 }
 `,
 
+    ...Object.fromEntries(
+      Object.entries(images).map(([fname, {bytes}]) => [
+        `OEBPS/images/${fname}`,
+        bytes
+      ])
+    ),
+
     "OEBPS/content.xhtml": `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
@@ -293,6 +348,24 @@ function sanitiseForXhtml(html) {
     .replace(/<!--[\s\S]*?-->/g, "")                      // all other HTML comments
     .replace(/<\?xml[^?]*\?>/gi, "")
     .replace(/<!DOCTYPE[^>]*>/gi, "");
+
+  // Step 2.5: insert missing whitespace before attribute names that immediately
+  // follow a closing quote (e.g. `"style=` → `" style=`)
+  body = body.replace(/(["'])([a-zA-Z_])/g, "$1 $2");
+
+  // Step 2.6: strip all inline style attributes — removes unquoted/invalid style
+  // values that break XHTML parsing, and lets Kobo reader font controls take effect
+  body = body.replace(/\s+style=(?:"[^"]*"|'[^']*'|[^\s"'>][^\s>]*)/gi, "");
+
+  // Step 2.7: quote any remaining unquoted attribute values so the document is
+  // well-formed XML (e.g. `class=foo` → `class="foo"`, `href=https://…` → quoted)
+  body = body.replace(/<([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g, (match, tag, attrs) => {
+    const fixed = attrs.replace(
+      /(\s)([a-zA-Z][a-zA-Z0-9_:-]*)=(?!["'])([^\s"'`<>]*)/g,
+      (m, space, attr, val) => `${space}${attr}="${val.replace(/"/g, "&quot;")}"`,
+    );
+    return `<${tag}${fixed}>`;
+  });
 
   // Step 3: strip tracking pixels (1x1 images)
   body = body.replace(/<img[^>]*width=["']?1["']?[^>]*height=["']?1["']?[^>]*\/?>/gi, "");
